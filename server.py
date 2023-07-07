@@ -21,9 +21,10 @@ OCSP_STAPLING_NOT_SUPPORT_STR = "OCSP response: no response sent"
 OCSP_STAPLING_STATUS = "Cert Status:"
 GOOD = "good"
 REVOKED = "revoked"
-NOT_IN_CRL = "not_in_crl"
+SERIAL_NOT_IN_CRL = "serial_not_in_crl"
 CRL_URI_IS_NONE = "crl_uri_is_none"
 CRL_DOWNLOAD_FAILURE = "crl_download_failure"
+ISSUER_IS_NONE = "issuer_is_none"
 
 RESPONSE_VERIFY = "Response verify"
 
@@ -36,11 +37,15 @@ FILE_CRL = "file.crl"
 
 
 DOMAIN = "domain"
+ISSUER_CERT = "issuer_cert"
+CERT_SERIAL = "cert_serial"
 STAPLING_STATUS = "stapling_status"
 STAPLING_ERROR = "stapling_error"
+OCSP_URI = "ocsp_uri"
 OCSP_VERIFY = "ocsp_verify"
 OCSP_REVOKE = "ocsp_revoke"
 OCSP_ERROR = "ocsp_error"
+CRL_URI = "crl_uri"
 CRL_STATUS = "crl_status"
 CRL_ERROR = "crl_error"
 
@@ -143,7 +148,7 @@ class CertificateManager:
         cmd = f"openssl crl -in {crl_path} -inform DER -text -noout | grep {serial}"
         response, error = invoke_subproc(cmd)
         # print("result=", response, error)
-        status = REVOKED if response is not EMPTY_STR else NOT_IN_CRL
+        status = REVOKED if response is not EMPTY_STR else SERIAL_NOT_IN_CRL
         print("crl_status:", status)
         return (status, error)
 
@@ -178,18 +183,22 @@ class OSCPServer:
             print("❌", error)
         else:
             print("ocsp_stapling status=" + status)
-        return (status, error)
+        return {STAPLING_STATUS: status, STAPLING_ERROR:error}
 
 
     def ocsp_revocation(self, domain):
+        result = dict()
         cert_mgr = self.cert_mgr
         cert_path = os.path.join(OUT, domain, CERT_CHAIN)
         ocsp_uri = cert_mgr.get_oscp_uri(cert_path)
+        result = result | {OCSP_URI: ocsp_uri}
 
         issuer_cert = cert_mgr.extract_issuer_cert(domain, cert_path)
+        result = result | {ISSUER_CERT: issuer_cert}
         if issuer_cert is None:
             print("❌ " + domain + ": no issuer")
-            return "no issuer"
+            result = result | {OCSP_ERROR: ISSUER_IS_NONE}
+            return result
 
         # Make the OCSP request
         cmd_ocsp = f"openssl ocsp -issuer {issuer_cert} -cert {cert_path} -text -url {ocsp_uri}"
@@ -209,31 +218,33 @@ class OSCPServer:
                 if RESPONSE_VERIFY in line:
                     verify_status = line.split(RESPONSE_VERIFY)[1].strip()
                     break
-        
-        print("OSCP verify:" +verify_status + ", revoke:" +revoked_status)
-        return (verify_status, revoked_status)
+        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status}
+        print("OCSP verify:" +verify_status + ", revoke:" +revoked_status)
+        return result
     
 
     def crl_revocation(self, domain):
+        result = dict()
         dir_out = os.path.join(OUT, domain)
         cert_path = os.path.join(dir_out, CERT_CHAIN)
         cert_mgr = self.cert_mgr
         
         cmd_crl = f"openssl x509 -in {cert_path} -noout -text | grep -A 5 CRL"
         response, error = invoke_subproc(cmd_crl)
-        URI = None
-        print("!!!!!!!!!!!!","response=", response, "error=", error)
+        crl_uri = None
+        # print("!!!!!!!!!!!!","response=", response, "error=", error)
         for line in response.split("\n"):
             line = line.strip()
             if line.startswith("URI:"):
-                URI = line.split("URI:")[1]
+                crl_uri = line.split("URI:")[1]
+                result = result | {CRL_URI: crl_uri}
                 break
         crl_path = os.path.join(dir_out, FILE_CRL)
         issuer_cert = cert_mgr.extract_issuer_cert(domain, cert_path)
         status = None
-        if URI is not None:
-            print(URI)
-            os.system(f"wget {URI} -O {crl_path}")
+        if crl_uri is not None:
+            print(crl_uri)
+            os.system(f"wget {crl_uri} -O {crl_path}")
             if not self.wait_file_download(crl_path, time.time()):
                 return (status, CRL_DOWNLOAD_FAILURE)
 
@@ -243,10 +254,12 @@ class OSCPServer:
             # print("!!!!!!!!!!!!", response)
             serial = cert_mgr.get_serial(cert_path)
             status, error = cert_mgr.detect_crl_revoked(crl_path, serial)
-            return (status, error)
+            result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error}
+            return result
         else:
             print("❌: URI is None")
-            return (status, CRL_URI_IS_NONE)
+            result = result | {CRL_ERROR: CRL_URI_IS_NONE}
+            return result
 
 
 
@@ -282,21 +295,14 @@ def start_measure(domains_list):
         # if server.check_finished(domain):
         #     continue
         print(f"------------{domain}--------------")
-        (staple_status, staple_error) = server.ocsp_stapling(domain)
+        staple_result = server.ocsp_stapling(domain)
+
         cert_path, dl_error = server.download_certs(domain)
         if not os.path.exists(cert_path):
             continue
         ocsp_result = server.ocsp_revocation(domain)
-        ocsp_verify, ocsp_revoked, ocsp_error = None, None, None
-        if len(ocsp_result) < 2:
-            ocsp_error = ocsp_result
-        else:
-            (ocsp_verify, ocsp_revoked) = ocsp_result[0], ocsp_result[1]
-        (crl_status, crl_error) = server.crl_revocation(domain)
-        result = {DOMAIN: domain, 
-            STAPLING_STATUS: staple_status, STAPLING_ERROR: staple_error,
-            OCSP_VERIFY: ocsp_verify, OCSP_REVOKE: ocsp_revoked, OCSP_ERROR: ocsp_error,
-            CRL_STATUS: crl_status, CRL_ERROR: crl_error}
+        crl_result = server.crl_revocation(domain)
+        result = {DOMAIN: domain } | staple_result | ocsp_result | crl_result
         result_file = os.path.join(OUT, domain, RESULT_JSON)
         with open(result_file, "w") as f:
             json.dump(result, f)
