@@ -6,6 +6,26 @@ from glob import glob
 import json
 import time
 
+
+from constants import BEGIN_CERTIFICATE, END_CERTIFICATE
+from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, OCSP_STAPLING_STATUS
+from constants import RESPONSE_VERIFY
+
+# DATABASE Attributes
+from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
+from constants import ISSUER_CERT, CERT_SERIAL
+from constants import STAPLING_ERROR, STAPLING_STATUS
+from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR
+from constants import CRL_URI, CRL_STATUS, CRL_ERROR
+
+
+# RESULT
+from constants import SERIAL_NOT_IN_CRL, CRL_URI_IS_NONE, ISSUER_IS_NONE, CRL_DOWNLOAD_FAILURE
+from constants import STATUS_GOOD, STATUS_REVOKED
+
+from constants import EMPTY_STR, CERT_CHAIN, FILE_CRL, RESULT_JSON
+
+
 '''
 Reference Book: https://www.feistyduck.com/library/openssl-cookbook/online/testing-with-openssl/checking-crl-revocation.html
 
@@ -17,41 +37,6 @@ Parse Certificate: $ openssl storeutl -noout -text -certs bundle.crt
 '''
 
 
-OCSP_STAPLING_NOT_SUPPORT_STR = "OCSP response: no response sent"
-OCSP_STAPLING_STATUS = "Cert Status:"
-GOOD = "good"
-REVOKED = "revoked"
-SERIAL_NOT_IN_CRL = "serial_not_in_crl"
-CRL_URI_IS_NONE = "crl_uri_is_none"
-CRL_DOWNLOAD_FAILURE = "crl_download_failure"
-ISSUER_IS_NONE = "issuer_is_none"
-
-RESPONSE_VERIFY = "Response verify"
-
-BEGIN_CERTIFICATE = "-----BEGIN CERTIFICATE-----"
-END_CERTIFICATE = "-----END CERTIFICATE-----"
-
-EMPTY_STR = ""
-CERT_CHAIN = "cert.chain"
-FILE_CRL = "file.crl"
-
-
-DOMAIN = "domain"
-DOWNLOAD_CERT = "download_cert"
-DOWNLOAD_CERT_ERROR = "download_cert_failed"
-ISSUER_CERT = "issuer_cert"
-CERT_SERIAL = "cert_serial"
-STAPLING_STATUS = "stapling_status"
-STAPLING_ERROR = "stapling_error"
-OCSP_URI = "ocsp_uri"
-OCSP_VERIFY = "ocsp_verify"
-OCSP_REVOKE = "ocsp_revoke"
-OCSP_ERROR = "ocsp_error"
-CRL_URI = "crl_uri"
-CRL_STATUS = "crl_status"
-CRL_ERROR = "crl_error"
-
-RESULT_JSON = "result.json"
 
 ZERO = 0
 TIMEOUT = 300
@@ -159,7 +144,7 @@ class CertificateManager:
         cmd = f"openssl crl -in {crl_path} -inform DER -text -noout | grep {serial}"
         response, error = invoke_subproc(cmd)
         # print("result=", response, error)
-        status = REVOKED if response is not EMPTY_STR else SERIAL_NOT_IN_CRL
+        status = STATUS_REVOKED if response is not EMPTY_STR else SERIAL_NOT_IN_CRL
         print("crl_status:", status)
         return (status, error)
 
@@ -181,9 +166,9 @@ class OSCPServer:
         (resp, error) = invoke_subproc(cmd)
         resp_list = resp.split("\n")
         for line in resp_list:
-            if OCSP_STAPLING_NOT_SUPPORT_STR in line:
-                print(domain + ":" + OCSP_STAPLING_NOT_SUPPORT_STR)
-                status = OCSP_STAPLING_NOT_SUPPORT_STR
+            if OCSP_RESP_STAPLING_NO_RESPONSE_SENT in line:
+                print(domain + ":" + OCSP_RESP_STAPLING_NO_RESPONSE_SENT)
+                status = OCSP_RESP_STAPLING_NO_RESPONSE_SENT
                 break
             elif OCSP_STAPLING_STATUS in line:
                 status = line.split(":")[1].strip()
