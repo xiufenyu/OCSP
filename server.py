@@ -5,19 +5,20 @@ from parse import parse
 from glob import glob
 import json
 import time
+import base64
 
 
-from constants import BEGIN_CERTIFICATE, END_CERTIFICATE
+from constants import END_CERTIFICATE
 from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, OCSP_STAPLING_STATUS
 from constants import RESPONSE_VERIFY
 
 # DATABASE Attributes
 from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
 from constants import ISSUER_CERT, CERT_SERIAL
-from constants import STAPLING_ERROR, STAPLING_STATUS
+from constants import STAPLING_ERROR, STAPLING_STATUS, UNAUTHORIZED
 from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR
 from constants import CRL_URI, CRL_STATUS, CRL_ERROR
-
+from constants import STAPLING_RESP, STAPLING_ERROR_MSG, VERIFY_ERROR, OCSP_RESP
 
 # RESULT
 from constants import SERIAL_NOT_IN_CRL, CRL_URI_IS_NONE, ISSUER_IS_NONE, CRL_DOWNLOAD_FAILURE
@@ -172,12 +173,18 @@ class OSCPServer:
                 break
             elif OCSP_STAPLING_STATUS in line:
                 status = line.split(":")[1].strip()
-                print(domain, status)
         if status is None and error:
             print("❌", error)
         else:
             print("ocsp_stapling status=" + status)
-        return {STAPLING_STATUS: status, STAPLING_ERROR:error}
+        # resp_b64 = base64.b64encode(bytes(resp, "utf-8")).decode('utf-8')
+        # error_b64 = base64.b64encode(bytes(error, "utf-8")).decode('utf-8')
+        stapling_error = None
+        error_list = error.split("\n")
+        for err in error_list:
+            if VERIFY_ERROR in err:
+                stapling_error = err.split(":")[-1].strip("\n")
+        return {STAPLING_STATUS: status, STAPLING_ERROR:stapling_error, STAPLING_RESP: resp, STAPLING_ERROR_MSG: error}
 
 
     def ocsp_revocation(self, domain):
@@ -208,11 +215,14 @@ class OSCPServer:
                 verify_status = line.split(RESPONSE_VERIFY)[1].strip()
                 break
         if verify_status is None:
+            if UNAUTHORIZED in response:
+                revoked_status = UNAUTHORIZED
             for line in error_list:
                 if RESPONSE_VERIFY in line:
                     verify_status = line.split(RESPONSE_VERIFY)[1].strip()
                     break
-        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status}
+
+        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: stdout_resp}
         print("OCSP verify:", verify_status, ", revoke:", revoked_status)
         return result
     
@@ -237,8 +247,6 @@ class OSCPServer:
         status = None
         if crl_uri is not None:
             cert_mgr.download_crl(crl_uri, crl_path)
-            # if not self.wait_file_download(crl_path, time.time()):
-            #     return (status, CRL_DOWNLOAD_FAILURE)
 
             # TODO: verify crl file
             # cmd_verify = f"openssl crl -in {crl_path} -inform DER -CAfile {issuer_cert} -noout"
@@ -287,6 +295,7 @@ def start_measure(domains_list):
         result_file = os.path.join(OUT, domain, RESULT_JSON)
         
         staple_result = server.ocsp_stapling(domain)
+        result = result | staple_result 
         cert_path, dl_error = server.download_certs(domain)
         if not os.path.exists(cert_path):
             result = result | {DOWNLOAD_CERT: DOWNLOAD_CERT_ERROR}
@@ -294,7 +303,7 @@ def start_measure(domains_list):
             continue
         ocsp_result = server.ocsp_revocation(domain)
         crl_result = server.crl_revocation(domain)
-        result = result | staple_result | ocsp_result | crl_result
+        result = result | ocsp_result | crl_result
         server.write_result(result, result_file)
         time.sleep(1)
 
@@ -311,5 +320,6 @@ def load_domains(fpath):
 # python3 server.py [out] [tranco_list]
 if __name__ == "__main__":
    domains_list = load_domains(TRANCO_LIST)
+#    domains_list = ["supremeclothing.us"]
    start_measure(domains_list)
   

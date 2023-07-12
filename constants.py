@@ -1,8 +1,18 @@
 BEGIN_CERTIFICATE = "-----BEGIN CERTIFICATE-----"
 END_CERTIFICATE = "-----END CERTIFICATE-----"
 OCSP_RESP_STAPLING_NO_RESPONSE_SENT = "OCSP response: no response sent"
+# STAPLING_OUTPUT = "stapling_output"
+NAME_OR_SERVICE_NOT_KNOWN = "Name or service not known"
+NO_ADDRESS_ASSOCIATED_WITH_HOST_NAME = "No address associated with hostname"
+NO_PEER_CERTIFICATE = "no peer certificate available"
+TEMPORAY_FAILURE_IN_NAME_RESOLUTION = "Temporary failure in name resolution"
+NO_CLIENT_CERTIFICATE_CA_NAMES_SENT = "No client certificate CA names sent"
+UNAUTHORIZED = "Responder Error: unauthorized"
+
 RESPONSE_VERIFY = "Response verify"
 OCSP_STAPLING_STATUS = "Cert Status:"
+
+VERIFY_ERROR = "verify error"
 
 
 # Database Attributes
@@ -15,10 +25,13 @@ ISSUER_CERT = "issuer_cert"
 CERT_SERIAL = "cert_serial"
 STAPLING_STATUS = "stapling_status"
 STAPLING_ERROR = "stapling_error"
+STAPLING_RESP = "stapling_resp"
+STAPLING_ERROR_MSG = "stapling_error_msg"
 OCSP_URI = "ocsp_uri"
 OCSP_VERIFY = "ocsp_verify"
 OCSP_REVOKE = "ocsp_revoke"
 OCSP_ERROR = "ocsp_error"
+OCSP_RESP = "ocsp_resp"
 CRL_URI = "crl_uri"
 CRL_STATUS = "crl_status"
 CRL_ERROR = "crl_error"

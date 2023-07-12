@@ -2,7 +2,7 @@ import sqlite3
 import sys
 
 from constants import STATUS_GOOD
-from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT
+from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, ISSUER_IS_NONE
 
 # 16079
 database = sys.argv[1]
@@ -60,6 +60,25 @@ def classify_websites():
         print(revoked, crl_result[revoked])
 
 
+def problematic_ocsp():
+    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_uri='{None}'"
+    cursor = conn.cursor()
+    cursor = cursor.execute(sql)
+    print("ocsp uri is None", len(cursor.fetchall()))
+
+    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_error='{ISSUER_IS_NONE}'"
+    cursor = conn.cursor()
+    cursor = cursor.execute(sql)
+    print("ocsp issuer is None", len(cursor.fetchall()))
+
+    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_uri!='{None}'"
+    cursor = conn.cursor()
+    cursor = cursor.execute(sql)
+    print("ocsp revoke is None, uri!=None", len(cursor.fetchall()))
+
 if __name__ == "__main__":
     count_websites()
     classify_websites()
+    problematic_ocsp()
+
+    # music-electronics-forum.com
