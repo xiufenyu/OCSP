@@ -14,6 +14,8 @@ OCSP_STAPLING_STATUS = "Cert Status:"
 
 VERIFY_ERROR = "verify error"
 
+CA_ISSUERS = "CA Issuers"
+
 
 # Database Attributes
 DOMAIN = "domain"

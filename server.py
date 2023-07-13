@@ -10,7 +10,7 @@ import base64
 
 from constants import END_CERTIFICATE
 from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, OCSP_STAPLING_STATUS
-from constants import RESPONSE_VERIFY
+from constants import RESPONSE_VERIFY, CA_ISSUERS
 
 # DATABASE Attributes
 from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
@@ -75,7 +75,7 @@ class CertificateManager:
     def download_crl(self, crl_uri, crl_path):
         print(crl_uri)
         os.system(f"wget {crl_uri} -O {crl_path}")
-        if os.path.getsize(crl_path) == ZERO:
+        if os.path.exists(crl_path) and os.path.getsize(crl_path) == ZERO:
             print("❌ crl file size = 0")
             os.system(f"rm -f {crl_path}")
 
@@ -144,12 +144,32 @@ class CertificateManager:
     def detect_crl_revoked(self, crl_path, serial):
         cmd = f"openssl crl -in {crl_path} -inform DER -text -noout | grep {serial}"
         response, error = invoke_subproc(cmd)
-        # print("result=", response, error)
         status = STATUS_REVOKED if response is not EMPTY_STR else SERIAL_NOT_IN_CRL
         print("crl_status:", status)
         return (status, error)
 
 
+    def download_issuer_cert_with_aia(self, domain, cert_path):
+        cmd_issuer_uri = f"openssl x509 -in {cert_path} -noout -text"
+        response, error = invoke_subproc(cmd_issuer_uri)
+        resp_list = response.split("\n")
+        issuer_uri = None
+        for item in resp_list:
+            if CA_ISSUERS in item:
+                issuer_uri = item.split("URI:")[1]
+                break
+        if issuer_uri is None:
+            return None
+        print("issuer_uri", issuer_uri)
+
+        issuer_path = os.path.join(OUT, domain, ISSUER_CERT+".crt")
+        os.system(f"wget {issuer_uri} -O {issuer_path}")
+        if os.path.getsize(issuer_path) == ZERO:
+            print("❌ Download issuer certificate failure")
+            os.system(f"rm -f {issuer_path}")
+            return None
+
+        return issuer_path
 
 class OSCPServer:
     def __init__(self):
@@ -195,7 +215,10 @@ class OSCPServer:
         result = result | {OCSP_URI: ocsp_uri}
 
         issuer_cert = cert_mgr.extract_issuer_cert(domain, cert_path)
+        if issuer_cert is None:
+            issuer_cert = cert_mgr.download_issuer_cert_with_aia(domain, cert_path)
         result = result | {ISSUER_CERT: issuer_cert}
+
         if issuer_cert is None:
             print("❌ " + domain + ": no issuer")
             result = result | {OCSP_ERROR: ISSUER_IS_NONE}
@@ -222,7 +245,7 @@ class OSCPServer:
                     verify_status = line.split(RESPONSE_VERIFY)[1].strip()
                     break
 
-        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: stdout_resp}
+        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: response}
         print("OCSP verify:", verify_status, ", revoke:", revoked_status)
         return result
     
@@ -320,6 +343,6 @@ def load_domains(fpath):
 # python3 server.py [out] [tranco_list]
 if __name__ == "__main__":
    domains_list = load_domains(TRANCO_LIST)
-#    domains_list = ["supremeclothing.us"]
+#    domains_list = ["take2hosting.com"]
    start_measure(domains_list)
   
