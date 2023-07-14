@@ -18,20 +18,28 @@ def count_websites():
     return total
 
 
-def classify_websites():
+def ocsp_stapling_websites():
     # ocsp_stapling
-    print("---------- STAPLING Result ----------------")
-    sql = f"SELECT domain, stapling_status FROM server WHERE stapling_status='{STATUS_GOOD}'"
+    print("---------- OCSP STAPLING Result ----------------")
+    sql = f"SELECT domain, stapling_status FROM server GROUP BY domain, stapling_status"
+
     cursor = conn.cursor()
     cursor = cursor.execute(sql)
-    print("Stapling [Good] websites:", len(cursor.fetchall()))
+    result = dict()
 
-    sql = f"SELECT domain, stapling_status FROM server WHERE stapling_status='{OCSP_RESP_STAPLING_NO_RESPONSE_SENT}'"
-    cursor = conn.cursor()
-    cursor = cursor.execute(sql)
-    print("Stapling [No response sent] websites:", len(cursor.fetchall()))
+    for row in cursor:
+        domain, status = row[0], row[1]
+        if status not in result:
+            result[status] = set()
+        result[status].add(domain)
 
+    for status in result:
+        print(status, len(result[status]))
+
+
+def ocsp_websites():
     # ocsp
+    print("---------- OCSP Result ----------------")
     sql = f"SELECT domain, ocsp_revoke FROM server GROUP BY domain, ocsp_revoke"
     cursor = conn.cursor()
     cursor = cursor.execute(sql)
@@ -39,13 +47,33 @@ def classify_websites():
     for row in cursor:
         domain, revoked = row[0], row[1]
         if revoked not in ocsp_result:
-            ocsp_result[revoked] = 0
-        ocsp_result[revoked] += 1
-    print("---------- OCSP Result ----------------")
+            ocsp_result[revoked] = set()
+        ocsp_result[revoked].add(domain)
     for revoked in ocsp_result:
-        print(revoked, ocsp_result[revoked])
+        print(revoked, len(ocsp_result[revoked]))
 
-    # CRL 
+
+def reasons_for_none_ocsp():
+    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_error='{ISSUER_IS_NONE}'"
+    cursor = conn.cursor()
+    cursor = cursor.execute(sql)
+    print("ocsp issuer is None", len(cursor.fetchall()))
+
+    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_uri='{None}'"
+    cursor = conn.cursor()
+    cursor = cursor.execute(sql)
+    print("ocsp uri is None", len(cursor.fetchall()))
+
+
+    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_uri=='{None}' AND ocsp_error='{ISSUER_IS_NONE}'"
+    cursor = conn.cursor()
+    cursor = cursor.execute(sql)
+    print("ocsp revoke is None, uri==None", len(cursor.fetchall()))
+
+
+def crl_websites():
+    # CRL
+    print("---------- CRL Result ----------------")
     sql = f"SELECT domain, crl_status FROM server GROUP BY domain, crl_status"
     cursor = conn.cursor()
     cursor = cursor.execute(sql)
@@ -53,32 +81,16 @@ def classify_websites():
     for row in cursor:
         domain, revoked = row[0], row[1]
         if revoked not in crl_result:
-            crl_result[revoked] = 0
-        crl_result[revoked] += 1
-    print("---------- CRL Result ----------------")
+            crl_result[revoked] = set()
+        crl_result[revoked].add(domain)
     for revoked in crl_result:
-        print(revoked, crl_result[revoked])
+        print(revoked, len(crl_result[revoked]))
 
 
-def problematic_ocsp():
-    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_uri='{None}'"
-    cursor = conn.cursor()
-    cursor = cursor.execute(sql)
-    print("ocsp uri is None", len(cursor.fetchall()))
-
-    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_error='{ISSUER_IS_NONE}'"
-    cursor = conn.cursor()
-    cursor = cursor.execute(sql)
-    print("ocsp issuer is None", len(cursor.fetchall()))
-
-    sql = f"SELECT domain, ocsp_revoke FROM server WHERE ocsp_revoke='{None}' AND ocsp_uri!='{None}'"
-    cursor = conn.cursor()
-    cursor = cursor.execute(sql)
-    print("ocsp revoke is None, uri!=None", len(cursor.fetchall()))
 
 if __name__ == "__main__":
-    count_websites()
-    classify_websites()
-    problematic_ocsp()
-
-    # music-electronics-forum.com
+    # count_websites()
+    # ocsp_stapling_websites()
+    # ocsp_websites()
+    # reasons_for_none_ocsp()
+    crl_websites()

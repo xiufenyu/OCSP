@@ -5,7 +5,7 @@ from parse import parse
 from glob import glob
 import json
 import time
-import base64
+from multiprocessing import Pool
 
 
 from constants import END_CERTIFICATE
@@ -46,6 +46,7 @@ TIMEOUT = 300
 
 OUT = sys.argv[1]
 TRANCO_LIST = sys.argv[2]
+add_www = True if sys.argv[3] == 'True' else False
 
 
 def invoke_subproc(cmd):
@@ -308,41 +309,73 @@ class OSCPServer:
 
 
 
-def start_measure(domains_list):
-    server = OSCPServer()
-    for domain in domains_list:
-        if server.check_finished(domain):
-            continue
-        print(f"------------{domain}--------------")
-        result = {DOMAIN: domain } 
-        result_file = os.path.join(OUT, domain, RESULT_JSON)
+# def start_measure(domains_list):
+#     server = OSCPServer()
+#     for domain in domains_list:
+#         if server.check_finished(domain):
+#             continue
+#         print(f"------------{domain}--------------")
+#         result = {DOMAIN: domain } 
+#         result_file = os.path.join(OUT, domain, RESULT_JSON)
         
-        staple_result = server.ocsp_stapling(domain)
-        result = result | staple_result 
-        cert_path, dl_error = server.download_certs(domain)
-        if not os.path.exists(cert_path):
-            result = result | {DOWNLOAD_CERT: DOWNLOAD_CERT_ERROR}
-            server.write_result(result, result_file)
-            continue
-        ocsp_result = server.ocsp_revocation(domain)
-        crl_result = server.crl_revocation(domain)
-        result = result | ocsp_result | crl_result
+#         staple_result = server.ocsp_stapling(domain)
+#         result = result | staple_result 
+#         cert_path, dl_error = server.download_certs(domain)
+#         if not os.path.exists(cert_path):
+#             result = result | {DOWNLOAD_CERT: DOWNLOAD_CERT_ERROR}
+#             server.write_result(result, result_file)
+#             continue
+#         ocsp_result = server.ocsp_revocation(domain)
+#         crl_result = server.crl_revocation(domain)
+#         result = result | ocsp_result | crl_result
+#         server.write_result(result, result_file)
+#         time.sleep(1)
+
+
+def start_measure(domain):
+    server = OSCPServer()
+    if server.check_finished(domain):
+        return
+    print(f"------------{domain}--------------")
+    result = {DOMAIN: domain } 
+    result_file = os.path.join(OUT, domain, RESULT_JSON)
+
+    staple_result = server.ocsp_stapling(domain)
+    result = result | staple_result
+    cert_path, dl_error = server.download_certs(domain)
+    if not os.path.exists(cert_path):
+        result = result | {DOWNLOAD_CERT: DOWNLOAD_CERT_ERROR}
         server.write_result(result, result_file)
-        time.sleep(1)
+        return
+    ocsp_result = server.ocsp_revocation(domain)
+    crl_result = server.crl_revocation(domain)
+    result = result | ocsp_result | crl_result
+    server.write_result(result, result_file)
+    time.sleep(1)
 
 
-def load_domains(fpath):
+def load_domains(fpath, add_www):
     domains_list = set()
     with open(fpath, "r") as f:
         for row in f:
             domain = row.split(",")[1].strip("\n")
+            domain = "www." + domain if add_www else domain
+            print(domain)
             domains_list.add(domain)
     return domains_list
 
 
-# python3 server.py [out] [tranco_list]
+# python3 server.py [out] [tranco_list] [True/False]
 if __name__ == "__main__":
-   domains_list = load_domains(TRANCO_LIST)
-#    domains_list = ["take2hosting.com"]
-   start_measure(domains_list)
+    # Single Process
+    # domains_list = load_domains(TRANCO_LIST)
+    # start_measure(domains_list)
+    #domains_list = ["take2hosting.com"]
+
+    # Multiple Process
+    domains_list = load_domains(TRANCO_LIST, add_www)
+    with Pool(100) as p:
+        p.map(start_measure, domains_list)
+
+
   
