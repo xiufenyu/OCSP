@@ -17,7 +17,7 @@ from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
 from constants import ISSUER_CERT, CERT_SERIAL
 from constants import STAPLING_ERROR, STAPLING_STATUS, UNAUTHORIZED
 from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR
-from constants import CRL_URI, CRL_STATUS, CRL_ERROR
+from constants import CRL_URI, CRL_STATUS, CRL_ERROR, CRL_SIZE
 from constants import STAPLING_RESP, STAPLING_ERROR_MSG, VERIFY_ERROR, OCSP_RESP
 
 # RESULT
@@ -76,9 +76,13 @@ class CertificateManager:
     def download_crl(self, crl_uri, crl_path):
         print(crl_uri)
         os.system(f"wget {crl_uri} -O {crl_path}")
-        if os.path.exists(crl_path) and os.path.getsize(crl_path) == ZERO:
-            print("❌ crl file size = 0")
-            os.system(f"rm -f {crl_path}")
+        size = ZERO
+        if os.path.exists(crl_path):
+            size = os.path.getsize(crl_path)
+            if size == ZERO:
+                print("❌ crl file size = 0")
+                os.system(f"rm -f {crl_path}")
+        return size
 
 
     def split_certchains(self, cert_path):
@@ -270,7 +274,7 @@ class OSCPServer:
         issuer_cert = cert_mgr.extract_issuer_cert(domain, cert_path)
         status = None
         if crl_uri is not None:
-            cert_mgr.download_crl(crl_uri, crl_path)
+            size = cert_mgr.download_crl(crl_uri, crl_path)
 
             # TODO: verify crl file
             # cmd_verify = f"openssl crl -in {crl_path} -inform DER -CAfile {issuer_cert} -noout"
@@ -278,7 +282,8 @@ class OSCPServer:
             # print("!!!!!!!!!!!!", response)
             serial = cert_mgr.get_serial(cert_path)
             status, error = cert_mgr.detect_crl_revoked(crl_path, serial)
-            result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error}
+            self.delete_file(crl_path)
+            result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size}
             return result
         else:
             print("❌: URI is None")
@@ -308,28 +313,9 @@ class OSCPServer:
             json.dump(result_dict, f)
 
 
-
-# def start_measure(domains_list):
-#     server = OSCPServer()
-#     for domain in domains_list:
-#         if server.check_finished(domain):
-#             continue
-#         print(f"------------{domain}--------------")
-#         result = {DOMAIN: domain } 
-#         result_file = os.path.join(OUT, domain, RESULT_JSON)
-        
-#         staple_result = server.ocsp_stapling(domain)
-#         result = result | staple_result 
-#         cert_path, dl_error = server.download_certs(domain)
-#         if not os.path.exists(cert_path):
-#             result = result | {DOWNLOAD_CERT: DOWNLOAD_CERT_ERROR}
-#             server.write_result(result, result_file)
-#             continue
-#         ocsp_result = server.ocsp_revocation(domain)
-#         crl_result = server.crl_revocation(domain)
-#         result = result | ocsp_result | crl_result
-#         server.write_result(result, result_file)
-#         time.sleep(1)
+    def delete_file(self, fpath):
+        if os.path.exists(fpath):
+            os.system(f"rm -f {fpath}")
 
 
 def start_measure(domain):
@@ -360,18 +346,12 @@ def load_domains(fpath, add_www):
         for row in f:
             domain = row.split(",")[1].strip("\n")
             domain = "www." + domain if add_www else domain
-            print(domain)
             domains_list.add(domain)
     return domains_list
 
 
 # python3 server.py [out] [tranco_list] [True/False]
 if __name__ == "__main__":
-    # Single Process
-    # domains_list = load_domains(TRANCO_LIST)
-    # start_measure(domains_list)
-    #domains_list = ["take2hosting.com"]
-
     # Multiple Process
     domains_list = load_domains(TRANCO_LIST, add_www)
     with Pool(100) as p:

@@ -37,6 +37,7 @@ OCSP_RESP = "ocsp_resp"
 CRL_URI = "crl_uri"
 CRL_STATUS = "crl_status"
 CRL_ERROR = "crl_error"
+CRL_SIZE = "crl_size"
 
 
 # Values

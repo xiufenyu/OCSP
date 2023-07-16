@@ -8,7 +8,7 @@ import base64
 from constants import RESULT_JSON
 from constants import DOMAIN, CERT_NAME, CERT_ERROR, ISSUER_CERT
 from constants import STAPLING_STATUS, STAPLING_ERROR, STAPLING_RESP, STAPLING_ERROR_MSG
-from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_RESP, CRL_URI, CRL_STATUS, CRL_ERROR
+from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_RESP, CRL_URI, CRL_STATUS, CRL_ERROR, CRL_SIZE
 
 from constants import DOWNLOAD_CERT, CERT_CHAIN
 
@@ -17,13 +17,15 @@ from constants import NAME_OR_SERVICE_NOT_KNOWN, NO_ADDRESS_ASSOCIATED_WITH_HOST
 OUT      = sys.argv[1]
 database = sys.argv[2]
 
+ZERO = 0
+
 
 conn = sqlite3.connect(database)
 cursor = conn.cursor()
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS server(domain TEXT PRIMARY KEY, cert_name TEXT, cert_error TEXT, issuer_cert TEXT,  stapling_status TEXT, \
                   stapling_error TEXT, stapling_resp, stapling_error_msg, ocsp_uri TEXT, ocsp_verify TEXT, ocsp_revoke TEXT, ocsp_error TEXT, ocsp_resp TEXT, \
-                  crl_uri TEXT, crl_status TEXT, crl_error TEXT)''')
+                  crl_uri TEXT, crl_status TEXT, crl_error TEXT, crl_size integer)''')
 
 
 def init_data(data_dict):
@@ -47,6 +49,8 @@ def init_data(data_dict):
         data_dict[CRL_ERROR] = None
     if OCSP_RESP not in data_dict:
         data_dict[OCSP_RESP] = None
+    if CRL_SIZE not in data_dict:
+        data_dict[CRL_SIZE] = ZERO
 
     return data_dict
 
@@ -107,10 +111,11 @@ def write_database(result_list):
     cursor = conn.cursor()
     for result in result_list:
         sql = f"INSERT INTO server ({DOMAIN}, {CERT_NAME}, {CERT_ERROR}, {ISSUER_CERT}, " \
-            f"{STAPLING_STATUS}, {STAPLING_ERROR}, {STAPLING_RESP}, {STAPLING_ERROR_MSG}, {OCSP_URI}, {OCSP_VERIFY}, {OCSP_REVOKE}, {OCSP_ERROR}, {OCSP_RESP}, {CRL_URI}, {CRL_STATUS}, {CRL_ERROR}) " \
+            f"{STAPLING_STATUS}, {STAPLING_ERROR}, {STAPLING_RESP}, {STAPLING_ERROR_MSG}, {OCSP_URI}, {OCSP_VERIFY}, {OCSP_REVOKE}, {OCSP_ERROR}, {OCSP_RESP}, " \
+            f"{CRL_URI}, {CRL_STATUS}, {CRL_ERROR}, {CRL_SIZE}) " \
             f" VALUES ('{result[DOMAIN]}', '{result[CERT_NAME]}', '{result[CERT_ERROR]}', '{result[ISSUER_CERT]}', '{result[STAPLING_STATUS]}', '{result[STAPLING_ERROR]}', '{result[STAPLING_RESP]}', " \
             f" '{result[STAPLING_ERROR_MSG]}', '{result[OCSP_URI]}', '{result[OCSP_VERIFY]}', '{result[OCSP_REVOKE]}', '{result[OCSP_ERROR]}', '{result[OCSP_RESP]}', '{result[CRL_URI]}', " \
-            f" '{result[CRL_STATUS]}', '{result[CRL_ERROR]}')"
+            f" '{result[CRL_STATUS]}', '{result[CRL_ERROR]}', {result[CRL_SIZE]})"
         
         cursor = cursor.execute(sql)
     conn.commit()
