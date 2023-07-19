@@ -9,20 +9,24 @@ from multiprocessing import Pool
 
 
 from constants import END_CERTIFICATE
-from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, OCSP_STAPLING_STATUS
+from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, OCSP_STAPLING_STATUS, STAPLING_VERIFICATION_ERROR, STAPLING_VERIFICATION_WORD
 from constants import RESPONSE_VERIFY, CA_ISSUERS
 
 # DATABASE Attributes
 from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
 from constants import ISSUER_CERT, CERT_SERIAL
-from constants import STAPLING_ERROR, STAPLING_STATUS, UNAUTHORIZED
-from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR
-from constants import CRL_URI, CRL_STATUS, CRL_ERROR, CRL_SIZE
+from constants import STAPLING_ERROR, STAPLING_STATUS, STAPLING_REASON, STAPLING_VERIFICATION, UNAUTHORIZED
+from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_REASON, REASON
+from constants import CRL_URI, CRL_STATUS, CRL_REASON, CRL_ERROR, CRL_RESP, CRL_SIZE
 from constants import STAPLING_RESP, STAPLING_ERROR_MSG, VERIFY_ERROR, OCSP_RESP
+from constants import TIME_STAMP
 
 # RESULT
-from constants import SERIAL_NOT_IN_CRL, CRL_URI_IS_NONE, ISSUER_IS_NONE, CRL_DOWNLOAD_FAILURE
+from constants import SERIAL_NOT_IN_CRL, CRL_URI_IS_NONE, ISSUER_IS_NONE
 from constants import STATUS_GOOD, STATUS_REVOKED
+from constants import OCSP_REVOCATION_REASON, CRL_REVOCATION_REASON
+from constants import CRL_SERIAL_NUMBER
+
 
 from constants import EMPTY_STR, CERT_CHAIN, FILE_CRL, RESULT_JSON
 
@@ -176,6 +180,59 @@ class CertificateManager:
 
         return issuer_path
 
+
+    def get_stapling_verification(self, resp_list):
+        verification = None
+        for row in resp_list:
+            if STAPLING_VERIFICATION_ERROR in row or STAPLING_VERIFICATION_WORD in row:
+                verification = row.split(":")[1].strip("\n").strip()
+                break
+        return verification
+
+
+    def get_OCSP_revocation_reason(self, resp_list):
+        reason = None
+        for row in resp_list:
+            if OCSP_REVOCATION_REASON in row or REASON in row:
+                reason = row.split(":")[1].strip("\n").strip()
+                break
+        return reason
+
+
+    def get_crl_revocation_reason(self, crl_path, serial):
+        crl_output = []
+        cmd = f"openssl crl -in {crl_path} -inform DER -text -noout"
+        response, error = invoke_subproc(cmd)
+        status = None
+        resp_list = response.split("\n")
+        this_cert_resp = []
+        for row in resp_list:
+            if serial in row:
+                status = STATUS_REVOKED
+                this_cert_resp.append(row)
+                continue
+            if status is not None:
+                if CRL_SERIAL_NUMBER in row:
+                    break
+                this_cert_resp.append(row)
+        if this_cert_resp != STATUS_REVOKED:
+            status = SERIAL_NOT_IN_CRL
+
+        # Get the revocation reason
+        b_match = False
+        reason = None
+        for row in this_cert_resp:
+            if CRL_REVOCATION_REASON in row:
+                b_match = True
+                continue
+            if b_match:
+                reason = row.strip("\n").strip()
+                break
+        return {CRL_REASON: reason, CRL_RESP: this_cert_resp}
+
+
+
+
 class OSCPServer:
     def __init__(self):
         self.cert_mgr = CertificateManager()
@@ -188,6 +245,7 @@ class OSCPServer:
 
     def ocsp_stapling(self, domain):
         status = None
+        reason = None
         cmd = f"echo | openssl s_client -connect {domain}:443 -status"
         (resp, error) = invoke_subproc(cmd)
         resp_list = resp.split("\n")
@@ -204,12 +262,18 @@ class OSCPServer:
             print("ocsp_stapling status=" + status)
         # resp_b64 = base64.b64encode(bytes(resp, "utf-8")).decode('utf-8')
         # error_b64 = base64.b64encode(bytes(error, "utf-8")).decode('utf-8')
+        cert_mgr = self.cert_mgr
+        reason = cert_mgr.get_OCSP_revocation_reason(resp_list)
+        verification = cert_mgr.get_stapling_verification(resp_list)
         stapling_error = None
         error_list = error.split("\n")
         for err in error_list:
             if VERIFY_ERROR in err:
                 stapling_error = err.split(":")[-1].strip("\n")
-        return {STAPLING_STATUS: status, STAPLING_ERROR:stapling_error, STAPLING_RESP: resp, STAPLING_ERROR_MSG: error}
+
+        return {STAPLING_STATUS: status, STAPLING_ERROR:stapling_error,
+                STAPLING_REASON: reason, STAPLING_VERIFICATION: verification,
+                STAPLING_RESP: resp, STAPLING_ERROR_MSG: error}
 
 
     def ocsp_revocation(self, domain):
@@ -233,6 +297,7 @@ class OSCPServer:
         cmd_ocsp = f"openssl ocsp -issuer {issuer_cert} -cert {cert_path} -text -url {ocsp_uri}"
         response, error = invoke_subproc(cmd_ocsp)
         stdout_resp = response.split("\n")
+        reason = cert_mgr.get_OCSP_revocation_reason(stdout_resp)
         error_list = error.split("\n")
         verify_status = None
         revoked_status = None
@@ -250,7 +315,7 @@ class OSCPServer:
                     verify_status = line.split(RESPONSE_VERIFY)[1].strip()
                     break
 
-        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: response}
+        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: response, OCSP_REASON: reason}
         print("OCSP verify:", verify_status, ", revoke:", revoked_status)
         return result
     
@@ -282,11 +347,14 @@ class OSCPServer:
             # print("!!!!!!!!!!!!", response)
             serial = cert_mgr.get_serial(cert_path)
             status, error = cert_mgr.detect_crl_revoked(crl_path, serial)
-            self.delete_file(crl_path)
-            result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size}
+            reason_dict = None
+            if status == STATUS_REVOKED:
+                reason_dict = cert_mgr.get_crl_revocation_reason(crl_path, serial)
+            result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: reason_dict[CRL_REASON], CRL_RESP: reason_dict[CRL_RESP]}
+            # self.delete_file(crl_path)
             return result
         else:
-            print("❌: URI is None")
+            print("❌: CRL URI is None")
             result = result | {CRL_ERROR: CRL_URI_IS_NONE}
             return result
 
@@ -323,7 +391,7 @@ def start_measure(domain):
     if server.check_finished(domain):
         return
     print(f"------------{domain}--------------")
-    result = {DOMAIN: domain } 
+    result = {DOMAIN: domain, TIME_STAMP: time.time()}
     result_file = os.path.join(OUT, domain, RESULT_JSON)
 
     staple_result = server.ocsp_stapling(domain)
@@ -354,7 +422,8 @@ def load_domains(fpath, add_www):
 if __name__ == "__main__":
     # Multiple Process
     domains_list = load_domains(TRANCO_LIST, add_www)
-    with Pool(100) as p:
+    # domains_list = ["www.aikis.or.jp", "www.algarnet.com.br", "www.belti.ru"]
+    with Pool(50) as p:
         p.map(start_measure, domains_list)
 
 

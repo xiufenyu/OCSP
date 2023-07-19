@@ -1,3 +1,6 @@
+# Custom Definition
+
+
 BEGIN_CERTIFICATE = "-----BEGIN CERTIFICATE-----"
 END_CERTIFICATE = "-----END CERTIFICATE-----"
 OCSP_RESP_STAPLING_NO_RESPONSE_SENT = "OCSP response: no response sent"
@@ -13,9 +16,16 @@ RESPONSE_VERIFY = "Response verify"
 OCSP_STAPLING_STATUS = "Cert Status:"
 
 VERIFY_ERROR = "verify error"
+STAPLING_VERIFICATION_ERROR = "Verification error"
+STAPLING_VERIFICATION_WORD = "Verification"
 
 CA_ISSUERS = "CA Issuers"
 
+OCSP_REVOCATION_REASON = "Revocation Reason"
+REASON = "Reason"
+CRL_REVOCATION_REASON = "CRL Reason Code"
+
+CRL_SERIAL_NUMBER = "Serial Number"
 
 # Database Attributes
 DOMAIN = "domain"
@@ -29,15 +39,22 @@ STAPLING_STATUS = "stapling_status"
 STAPLING_ERROR = "stapling_error"
 STAPLING_RESP = "stapling_resp"
 STAPLING_ERROR_MSG = "stapling_error_msg"
+STAPLING_REASON = "stapling_reason"
+STAPLING_VERIFICATION = "stapling_verification"
 OCSP_URI = "ocsp_uri"
 OCSP_VERIFY = "ocsp_verify"
 OCSP_REVOKE = "ocsp_revoke"
+OCSP_REASON = "ocsp_reason"
 OCSP_ERROR = "ocsp_error"
 OCSP_RESP = "ocsp_resp"
 CRL_URI = "crl_uri"
 CRL_STATUS = "crl_status"
+CRL_REASON = "crl_reason"
 CRL_ERROR = "crl_error"
+CRL_RESP="crl_resp"
 CRL_SIZE = "crl_size"
+
+TIME_STAMP = "ts"
 
 
 # Values
