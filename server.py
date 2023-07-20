@@ -1,11 +1,15 @@
 import os
 import sys
-import subprocess
+# import subprocess
 from parse import parse
 from glob import glob
 import json
 import time
 from multiprocessing import Pool
+
+
+from constants import invoke_subproc
+from cert_mgr import CertificateManager
 
 
 from constants import END_CERTIFICATE
@@ -14,7 +18,7 @@ from constants import RESPONSE_VERIFY, CA_ISSUERS
 
 # DATABASE Attributes
 from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
-from constants import ISSUER_CERT, CERT_SERIAL
+from constants import ISSUER_CERT, CERT_SERIAL, ISSUER_CN
 from constants import STAPLING_ERROR, STAPLING_STATUS, STAPLING_REASON, STAPLING_VERIFICATION, UNAUTHORIZED
 from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_REASON, REASON
 from constants import CRL_URI, CRL_STATUS, CRL_REASON, CRL_ERROR, CRL_RESP, CRL_SIZE
@@ -51,185 +55,6 @@ TIMEOUT = 300
 OUT = sys.argv[1]
 TRANCO_LIST = sys.argv[2]
 add_www = True if sys.argv[3] == 'True' else False
-
-
-def invoke_subproc(cmd):
-    output = subprocess.run(cmd, capture_output=True, shell=True)
-    resp = output.stdout.decode("utf-8")
-    error = output.stderr.decode("utf-8")
-    return (resp, error)
-
-
-# TODO:
-class CertificateManager:
-    def download_certchain(self, domain):
-        dir_out = os.path.join(OUT, domain)
-        if not os.path.exists(dir_out):
-            os.makedirs(dir_out)
-        cert_path = os.path.join(dir_out, CERT_CHAIN)
-
-        cmd = f"echo | openssl s_client -showcerts -connect {domain}:443 2>&1 | sed --quiet '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' > {cert_path}"
-        (_, error) = invoke_subproc(cmd)
-        if os.path.getsize(cert_path) == ZERO:
-            print("❌ download certificate failed")
-            os.system(f"rm -f {cert_path}")
-
-        return (cert_path, error)
-    
-
-    def download_crl(self, crl_uri, crl_path):
-        print(crl_uri)
-        os.system(f"wget {crl_uri} -O {crl_path}")
-        size = ZERO
-        if os.path.exists(crl_path):
-            size = os.path.getsize(crl_path)
-            if size == ZERO:
-                print("❌ crl file size = 0")
-                os.system(f"rm -f {crl_path}")
-        return size
-
-
-    def split_certchains(self, cert_path):
-        cmd = f"openssl storeutl  -certs {cert_path}"
-        output, _ = invoke_subproc(cmd)
-        output = output.split("\n")
-        number = 0
-        cert_content = EMPTY_STR
-        for line in output:
-            if ": Certificate" in line:
-                number = line.split(":")[0]
-                continue
-            cert_content += line
-            cert_content += "\n"
-            if line.startswith(END_CERTIFICATE):
-                dir_out = os.path.dirname(cert_path)
-                dest_path = os.path.join(dir_out, f"cert_{number}.crt")
-                with open(dest_path, "w") as f:
-                    f.write(cert_content)
-                cert_content = EMPTY_STR
-
-    
-    def extract_issuer_cert(self, domain, cert_path):
-        dir_out = os.path.join(OUT, domain)
-        cmd_issuer = f"openssl x509 -in {cert_path} -noout -issuer"
-        issuer_name, error = invoke_subproc(cmd_issuer)
-        issuer_name = issuer_name.split("issuer=")[1]
-        print(domain+", issuer: "+issuer_name)
-        
-        self.split_certchains(cert_path)
-
-        cert_files = glob(os.path.join(dir_out, "cert_*.crt"))
-        issuer_cert = None
-        for cert in cert_files:
-            (number, ) = parse("cert_{}.crt", os.path.basename(cert))
-            if number == "0":
-                continue
-            cmd_subject = f"openssl x509 -in {cert} -noout -subject"
-            subject_name, error = invoke_subproc(cmd_subject)
-            subject_name = subject_name.split("subject=")[1]
-            if issuer_name == subject_name:
-                issuer_cert = cert
-                break
-        return issuer_cert
-    
-
-    def get_oscp_uri(self, cert_path):
-        cmd_uri = f"openssl x509 -in {cert_path} -noout -ocsp_uri"
-        ocsp_uri, _ = invoke_subproc(cmd_uri)
-        ocsp_uri = ocsp_uri.strip("\n")
-        print(cert_path, ", ocsp_uri:" + ocsp_uri)
-        return ocsp_uri
-
-
-    def get_serial(self, cert_path):
-        cmd_serial = f"openssl x509 -in {cert_path} -noout -serial"
-        response, _ = invoke_subproc(cmd_serial)
-        serial = response.split("serial=")[1]
-        serial = serial.strip("\n")
-        print(cert_path + ", serial:" + serial)
-        return serial
-
-
-    def detect_crl_revoked(self, crl_path, serial):
-        cmd = f"openssl crl -in {crl_path} -inform DER -text -noout | grep {serial}"
-        response, error = invoke_subproc(cmd)
-        status = STATUS_REVOKED if response is not EMPTY_STR else SERIAL_NOT_IN_CRL
-        print("crl_status:", status)
-        return (status, error)
-
-
-    def download_issuer_cert_with_aia(self, domain, cert_path):
-        cmd_issuer_uri = f"openssl x509 -in {cert_path} -noout -text"
-        response, error = invoke_subproc(cmd_issuer_uri)
-        resp_list = response.split("\n")
-        issuer_uri = None
-        for item in resp_list:
-            if CA_ISSUERS in item:
-                issuer_uri = item.split("URI:")[1]
-                break
-        if issuer_uri is None:
-            return None
-        print("issuer_uri", issuer_uri)
-
-        issuer_path = os.path.join(OUT, domain, ISSUER_CERT+".crt")
-        os.system(f"wget {issuer_uri} -O {issuer_path}")
-        if os.path.getsize(issuer_path) == ZERO:
-            print("❌ Download issuer certificate failure")
-            os.system(f"rm -f {issuer_path}")
-            return None
-
-        return issuer_path
-
-
-    def get_stapling_verification(self, resp_list):
-        verification = None
-        for row in resp_list:
-            if STAPLING_VERIFICATION_ERROR in row or STAPLING_VERIFICATION_WORD in row:
-                verification = row.split(":")[1].strip("\n").strip()
-                break
-        return verification
-
-
-    def get_OCSP_revocation_reason(self, resp_list):
-        reason = None
-        for row in resp_list:
-            if OCSP_REVOCATION_REASON in row or REASON in row:
-                reason = row.split(":")[1].strip("\n").strip()
-                break
-        return reason
-
-
-    def get_crl_revocation_reason(self, crl_path, serial):
-        crl_output = []
-        cmd = f"openssl crl -in {crl_path} -inform DER -text -noout"
-        response, error = invoke_subproc(cmd)
-        status = None
-        resp_list = response.split("\n")
-        this_cert_resp = []
-        for row in resp_list:
-            if serial in row:
-                status = STATUS_REVOKED
-                this_cert_resp.append(row)
-                continue
-            if status is not None:
-                if CRL_SERIAL_NUMBER in row:
-                    break
-                this_cert_resp.append(row)
-        if this_cert_resp != STATUS_REVOKED:
-            status = SERIAL_NOT_IN_CRL
-
-        # Get the revocation reason
-        b_match = False
-        reason = None
-        for row in this_cert_resp:
-            if CRL_REVOCATION_REASON in row:
-                b_match = True
-                continue
-            if b_match:
-                reason = row.strip("\n").strip()
-                break
-        return {CRL_REASON: reason, CRL_RESP: this_cert_resp}
-
 
 
 
@@ -280,8 +105,11 @@ class OSCPServer:
         result = dict()
         cert_mgr = self.cert_mgr
         cert_path = os.path.join(OUT, domain, CERT_CHAIN)
+        expiry_dict = cert_mgr.extract_expiry(cert_path)
+        serial = cert_mgr.get_serial(cert_path)
+        issuer_cn = cert_mgr.extract_issuer_authority(cert_path)
         ocsp_uri = cert_mgr.get_oscp_uri(cert_path)
-        result = result | {OCSP_URI: ocsp_uri}
+        result = result | {OCSP_URI: ocsp_uri} | expiry_dict | {CERT_SERIAL: serial} | {ISSUER_CN: issuer_cn}
 
         issuer_cert = cert_mgr.extract_issuer_cert(domain, cert_path)
         if issuer_cert is None:
@@ -350,8 +178,10 @@ class OSCPServer:
             reason_dict = None
             if status == STATUS_REVOKED:
                 reason_dict = cert_mgr.get_crl_revocation_reason(crl_path, serial)
-            result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: reason_dict[CRL_REASON], CRL_RESP: reason_dict[CRL_RESP]}
-            # self.delete_file(crl_path)
+            if reason_dict:
+                result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: reason_dict[CRL_REASON], CRL_RESP: reason_dict[CRL_RESP]}
+            else:
+                result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: None, CRL_RESP: None}
             return result
         else:
             print("❌: CRL URI is None")
@@ -388,8 +218,8 @@ class OSCPServer:
 
 def start_measure(domain):
     server = OSCPServer()
-    if server.check_finished(domain):
-        return
+    # if server.check_finished(domain):
+    #     return
     print(f"------------{domain}--------------")
     result = {DOMAIN: domain, TIME_STAMP: time.time()}
     result_file = os.path.join(OUT, domain, RESULT_JSON)
@@ -418,13 +248,18 @@ def load_domains(fpath, add_www):
     return domains_list
 
 
-# python3 server.py [out] [tranco_list] [True/False]
-if __name__ == "__main__":
-    # Multiple Process
+def main():
+ # Multiple Process
     domains_list = load_domains(TRANCO_LIST, add_www)
     # domains_list = ["www.aikis.or.jp", "www.algarnet.com.br", "www.belti.ru"]
-    with Pool(50) as p:
+    with Pool(1) as p:
         p.map(start_measure, domains_list)
+
+
+# python3 server.py [out] [tranco_list] [True/False]
+if __name__ == "__main__":
+    main()
+   
 
 
   

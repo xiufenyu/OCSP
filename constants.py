@@ -1,4 +1,12 @@
 # Custom Definition
+import subprocess
+
+def invoke_subproc(cmd):
+    output = subprocess.run(cmd, capture_output=True, shell=True)
+    resp = output.stdout.decode("utf-8")
+    error = output.stderr.decode("utf-8")
+    return (resp, error)
+
 
 
 BEGIN_CERTIFICATE = "-----BEGIN CERTIFICATE-----"
@@ -27,14 +35,21 @@ CRL_REVOCATION_REASON = "CRL Reason Code"
 
 CRL_SERIAL_NUMBER = "Serial Number"
 
+# NOT_BEFORE_KEYWORD = "Not Before="
+# NOT_AFTER_KEYWORD = "Not After="
+
+
+
 # Database Attributes
 DOMAIN = "domain"
+SERIAL = "serial"
 CERT_NAME = "cert_name"
 CERT_ERROR = "cert_error"
 DOWNLOAD_CERT = "download_cert"
 DOWNLOAD_CERT_ERROR = "download_cert_failed"
+# CERT_SERIAL = "cert_serial"
 ISSUER_CERT = "issuer_cert"
-CERT_SERIAL = "cert_serial"
+ISSUER_CN = "issuer_cn"
 STAPLING_STATUS = "stapling_status"
 STAPLING_ERROR = "stapling_error"
 STAPLING_RESP = "stapling_resp"
@@ -54,6 +69,9 @@ CRL_ERROR = "crl_error"
 CRL_RESP="crl_resp"
 CRL_SIZE = "crl_size"
 
+NOT_BEFORE = "not_before"
+NOT_AFTER = "not_after"
+VALIDITY = "validity"
 TIME_STAMP = "ts"
 
 
