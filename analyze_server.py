@@ -9,7 +9,7 @@ import base64
 from cert_mgr import CertificateManager
 
 
-from constants import RESULT_JSON
+from constants import RESULT_JSON, SERVER_RESULT_JSON
 from constants import DOMAIN, SERIAL, CERT_NAME, CERT_ERROR, ISSUER_CERT, ISSUER_CN
 from constants import STAPLING_STATUS, STAPLING_ERROR, STAPLING_RESP, STAPLING_ERROR_MSG, STAPLING_REASON, STAPLING_VERIFICATION
 from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_REASON, OCSP_ERROR, OCSP_RESP
@@ -39,6 +39,10 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS server( \
                   crl_uri TEXT, crl_status TEXT, crl_reason TEXT, crl_error TEXT, crl_resp TEXT, crl_size integer, ts TEXT, \
                   PRIMARY KEY (domain, ts) \
                   )''')
+
+
+def check_parsed(fpath):
+    return True if os.path.exists(fpath) else False
 
 
 def init_data(data_dict):
@@ -174,13 +178,15 @@ def update_crl_infor(data_dict, crl_path):
 
 def parse_result_files(out):
     folders = next(os.walk(out))[1]
-    result = list()
-    count = 0
     for folder in folders:
         rfile = os.path.join(out, folder, RESULT_JSON)
-        if not os.path.exists(rfile):
+        server_result_path = os.path.join(out, folder, SERVER_RESULT_JSON)
+        if not os.path.exists(rfile) or check_parsed(server_result_path):
             continue
+
+        data_dict = dict()
         with open(rfile, "r") as f:
+            print("--------" + rfile + "--------------")
             data_dict = json.load(f)
             data_dict = init_data(data_dict)
             cert_path = os.path.join(out, folder, CERT_CHAIN)
@@ -194,37 +200,36 @@ def parse_result_files(out):
             data_dict = update_ocsp_infor(data_dict, cert_path)
             data_dict = update_crl_infor(data_dict, cert_path)
 
-            result.append(data_dict)
-
-        if len(result) >=1000:
-            count += len(result)
-            write_database(result, count)
-            result.clear()
-    write_database(result)
+        with open(server_result_path, 'w') as f:
+            json.dump(data_dict, f)
 
     return result
 
 
 
-def write_database(result_list, count):
-    print("Write database, count=", count)
+def write_database():
+    print("---------Start to write to database---------------")
+    folders = next(os.walk(out))[1]
     cursor = conn.cursor()
-    for result in result_list:
-        sql = f"INSERT INTO server ({DOMAIN}, {CERT_NAME}, {SERIAL}, {ISSUER_CN}, {NOT_BEFORE}, {NOT_AFTER}, {VALIDITY}, {ISSUER_CERT}, {CERT_ERROR}, " \
-            f"{STAPLING_STATUS}, {STAPLING_REASON}, {STAPLING_ERROR}, {STAPLING_VERIFICATION}, {STAPLING_RESP}, {STAPLING_ERROR_MSG}, " \
-            f"{OCSP_URI}, {OCSP_VERIFY}, {OCSP_REVOKE}, {OCSP_REASON}, {OCSP_ERROR}, {OCSP_RESP}, " \
-            f"{CRL_URI}, {CRL_STATUS}, {CRL_REASON}, {CRL_ERROR}, {CRL_RESP}, {CRL_SIZE}, {TIME_STAMP}) " \
-            f" VALUES ('{result[DOMAIN]}', '{result[CERT_NAME]}', '{result[SERIAL]}', '{result[ISSUER_CN]}', '{result[NOT_BEFORE]}', '{result[NOT_AFTER]}', {result[VALIDITY]}, '{result[ISSUER_CERT]}', '{result[CERT_ERROR]}', " \
-            f" '{result[STAPLING_STATUS]}', '{result[STAPLING_REASON]}', '{result[STAPLING_ERROR]}', '{result[STAPLING_VERIFICATION]}', '{result[STAPLING_RESP]}', '{result[STAPLING_ERROR_MSG]}', " \
-            f" '{result[OCSP_URI]}', '{result[OCSP_VERIFY]}', '{result[OCSP_REVOKE]}', '{result[OCSP_REASON]}', '{result[OCSP_ERROR]}', '{result[OCSP_RESP]}', " \
-            f" '{result[CRL_URI]}', '{result[CRL_STATUS]}', '{result[CRL_REASON]}', '{result[CRL_ERROR]}', '{result[CRL_RESP]}', {result[CRL_SIZE]}, '{result[TIME_STAMP]}')"
-
-        print(sql)
-
-        cursor = cursor.execute(sql)
+    for folder in folders:
+        server_result_path = os.path.join(out, folder, SERVER_RESULT_JSON)
+        if not check_parsed(server_result_path):
+            continue
+        with open(server_result_path, "r") as f:
+            result = json.load(f)
+            sql = f"INSERT INTO server ({DOMAIN}, {CERT_NAME}, {SERIAL}, {ISSUER_CN}, {NOT_BEFORE}, {NOT_AFTER}, {VALIDITY}, {ISSUER_CERT}, {CERT_ERROR}, " \
+                f"{STAPLING_STATUS}, {STAPLING_REASON}, {STAPLING_ERROR}, {STAPLING_VERIFICATION}, {STAPLING_RESP}, {STAPLING_ERROR_MSG}, " \
+                f"{OCSP_URI}, {OCSP_VERIFY}, {OCSP_REVOKE}, {OCSP_REASON}, {OCSP_ERROR}, {OCSP_RESP}, " \
+                f"{CRL_URI}, {CRL_STATUS}, {CRL_REASON}, {CRL_ERROR}, {CRL_RESP}, {CRL_SIZE}, {TIME_STAMP}) " \
+                f" VALUES ('{result[DOMAIN]}', '{result[CERT_NAME]}', '{result[SERIAL]}', '{result[ISSUER_CN]}', '{result[NOT_BEFORE]}', '{result[NOT_AFTER]}', {result[VALIDITY]}, '{result[ISSUER_CERT]}', '{result[CERT_ERROR]}', " \
+                f" '{result[STAPLING_STATUS]}', '{result[STAPLING_REASON]}', '{result[STAPLING_ERROR]}', '{result[STAPLING_VERIFICATION]}', '{result[STAPLING_RESP]}', '{result[STAPLING_ERROR_MSG]}', " \
+                f" '{result[OCSP_URI]}', '{result[OCSP_VERIFY]}', '{result[OCSP_REVOKE]}', '{result[OCSP_REASON]}', '{result[OCSP_ERROR]}', '{result[OCSP_RESP]}', " \
+                f" '{result[CRL_URI]}', '{result[CRL_STATUS]}', '{result[CRL_REASON]}', '{result[CRL_ERROR]}', '{result[CRL_RESP]}', {result[CRL_SIZE]}, '{result[TIME_STAMP]}')"
+            # print(sql)
+            cursor = cursor.execute(sql)
     conn.commit()
 
 
 if __name__ == "__main__":
     parse_result_files(OUT)
-    
+    write_database()
