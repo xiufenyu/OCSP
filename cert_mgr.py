@@ -118,7 +118,7 @@ class CertificateManager:
         response, _ = invoke_subproc(cmd_serial)
         serial = response.split("serial=")[1]
         serial = serial.strip("\n")
-        print(cert_path + ", serial:" + serial)
+        # print(cert_path + ", serial:" + serial)
         return serial
 
 
@@ -145,6 +145,9 @@ class CertificateManager:
 
         issuer_path = os.path.join(OUT, domain, ISSUER_CERT+".crt")
         os.system(f"wget {issuer_uri} -O {issuer_path}")
+        if not os.path.exists(issuer_path):
+            return None
+
         if os.path.getsize(issuer_path) == ZERO:
             print("❌ Download issuer certificate failure")
             os.system(f"rm -f {issuer_path}")
