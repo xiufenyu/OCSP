@@ -1,8 +1,6 @@
 import os
 import sys
 # import subprocess
-from parse import parse
-from glob import glob
 import json
 import time
 from multiprocessing import Pool
@@ -18,7 +16,7 @@ from constants import RESPONSE_VERIFY, CA_ISSUERS
 
 # DATABASE Attributes
 from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
-from constants import ISSUER_CERT, CERT_SERIAL, ISSUER_CN
+from constants import ISSUER_CERT, SERIAL, ISSUER_CN
 from constants import STAPLING_ERROR, STAPLING_STATUS, STAPLING_REASON, STAPLING_VERIFICATION, UNAUTHORIZED
 from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_REASON, REASON
 from constants import CRL_URI, CRL_STATUS, CRL_REASON, CRL_ERROR, CRL_RESP, CRL_SIZE
@@ -46,14 +44,13 @@ Parse Certificate: $ openssl storeutl -noout -text -certs bundle.crt
 '''
 
 
-
-ZERO = 0
 TIMEOUT = 300
 
 
 
 OUT = sys.argv[1]
 TRANCO_LIST = sys.argv[2]
+
 add_www = True if sys.argv[3] == 'True' else False
 
 
@@ -109,7 +106,7 @@ class OSCPServer:
         serial = cert_mgr.get_serial(cert_path)
         issuer_cn = cert_mgr.extract_issuer_authority(cert_path)
         ocsp_uri = cert_mgr.get_oscp_uri(cert_path)
-        result = result | {OCSP_URI: ocsp_uri} | expiry_dict | {CERT_SERIAL: serial} | {ISSUER_CN: issuer_cn}
+        result = result | {OCSP_URI: ocsp_uri} | expiry_dict | {SERIAL: serial} | {ISSUER_CN: issuer_cn}
 
         issuer_cert = cert_mgr.extract_issuer_cert(domain, cert_path)
         if issuer_cert is None:
@@ -179,9 +176,9 @@ class OSCPServer:
             if status == STATUS_REVOKED:
                 reason_dict = cert_mgr.get_crl_revocation_reason(crl_path, serial)
             if reason_dict:
-                result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: reason_dict[CRL_REASON], CRL_RESP: reason_dict[CRL_RESP]}
+                result = result | {SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: reason_dict[CRL_REASON], CRL_RESP: reason_dict[CRL_RESP]}
             else:
-                result = result | {CERT_SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: None, CRL_RESP: None}
+                result = result | {SERIAL: serial, CRL_STATUS: status, CRL_ERROR: error, CRL_SIZE: size, CRL_REASON: None, CRL_RESP: None}
             return result
         else:
             print("❌: CRL URI is None")
@@ -218,8 +215,8 @@ class OSCPServer:
 
 def start_measure(domain):
     server = OSCPServer()
-    # if server.check_finished(domain):
-    #     return
+    if server.check_finished(domain):
+        return
     print(f"------------{domain}--------------")
     result = {DOMAIN: domain, TIME_STAMP: time.time()}
     result_file = os.path.join(OUT, domain, RESULT_JSON)
@@ -249,10 +246,10 @@ def load_domains(fpath, add_www):
 
 
 def main():
- # Multiple Process
+    # Multiple Process
     domains_list = load_domains(TRANCO_LIST, add_www)
     # domains_list = ["www.aikis.or.jp", "www.algarnet.com.br", "www.belti.ru"]
-    with Pool(1) as p:
+    with Pool(50) as p:
         p.map(start_measure, domains_list)
 
 

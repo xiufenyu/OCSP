@@ -1,11 +1,17 @@
 # Custom Definition
 import subprocess
 
+
+
 def invoke_subproc(cmd):
     output = subprocess.run(cmd, capture_output=True, shell=True)
     resp = output.stdout.decode("utf-8")
     error = output.stderr.decode("utf-8")
     return (resp, error)
+
+
+
+DEFAULT_VALIDITY_VALUE = -999999
 
 
 
@@ -34,10 +40,6 @@ REASON = "Reason"
 CRL_REVOCATION_REASON = "CRL Reason Code"
 
 CRL_SERIAL_NUMBER = "Serial Number"
-
-# NOT_BEFORE_KEYWORD = "Not Before="
-# NOT_AFTER_KEYWORD = "Not After="
-
 
 
 # Database Attributes
