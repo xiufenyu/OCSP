@@ -1,9 +1,9 @@
+import base64
+import json
 import sys
 import os
-import json
 import sqlite3
-import base64
-
+from multiprocessing import Pool
 
 
 from cert_mgr import CertificateManager
@@ -37,7 +37,7 @@ cursor.execute('''CREATE TABLE IF NOT EXISTS server( \
                   stapling_status TEXT, stapling_reason TEXT, stapling_error TEXT, stapling_verification TEXT, stapling_resp, stapling_error_msg, \
                   ocsp_uri TEXT, ocsp_verify TEXT, ocsp_revoke TEXT, ocsp_reason TEXT, ocsp_error TEXT, ocsp_resp TEXT, \
                   crl_uri TEXT, crl_status TEXT, crl_reason TEXT, crl_error TEXT, crl_resp TEXT, crl_size integer, ts TEXT, \
-                  PRIMARY KEY (domain, ts) \
+                  PRIMARY KEY (domain, serial, ts) \
                   )''')
 
 
@@ -176,38 +176,64 @@ def update_crl_infor(data_dict, crl_path):
     return data_dict
 
 
-def parse_result_files(out):
-    folders = next(os.walk(out))[1]
-    for folder in folders:
-        rfile = os.path.join(out, folder, RESULT_JSON)
-        server_result_path = os.path.join(out, folder, SERVER_RESULT_JSON)
-        if not os.path.exists(rfile) or check_parsed(server_result_path):
-            continue
+# def parse_result_files(out):
+#     folders = next(os.walk(out))[1]
+#     for folder in folders:
+#         rfile = os.path.join(out, folder, RESULT_JSON)
+#         server_result_path = os.path.join(out, folder, SERVER_RESULT_JSON)
+#         if not os.path.exists(rfile) or check_parsed(server_result_path):
+#             continue
 
-        data_dict = dict()
-        with open(rfile, "r") as f:
-            print("--------" + rfile + "--------------")
-            data_dict = json.load(f)
-            data_dict = init_data(data_dict)
-            cert_path = os.path.join(out, folder, CERT_CHAIN)
-            crl_path = os.path.join(out, folder, FILE_CRL)
-            data_dict = update_cert_infor(data_dict, cert_path, rfile)
+#         data_dict = dict()
+#         with open(rfile, "r") as f:
+#             print("--------" + rfile + "--------------")
+#             data_dict = json.load(f)
+#             data_dict = init_data(data_dict)
+#             cert_path = os.path.join(out, folder, CERT_CHAIN)
+#             crl_path = os.path.join(out, folder, FILE_CRL)
+#             data_dict = update_cert_infor(data_dict, cert_path, rfile)
 
-            data_dict[CERT_ERROR] = data_dict[DOWNLOAD_CERT] if DOWNLOAD_CERT in data_dict else None
-            data_dict[CERT_NAME] = CERT_CHAIN if not data_dict[CERT_ERROR] else None
+#             data_dict[CERT_ERROR] = data_dict[DOWNLOAD_CERT] if DOWNLOAD_CERT in data_dict else None
+#             data_dict[CERT_NAME] = CERT_CHAIN if not data_dict[CERT_ERROR] else None
 
-            data_dict = update_stapling_infor(data_dict, cert_path)
-            data_dict = update_ocsp_infor(data_dict, cert_path)
-            data_dict = update_crl_infor(data_dict, cert_path)
+#             data_dict = update_stapling_infor(data_dict, cert_path)
+#             data_dict = update_ocsp_infor(data_dict, cert_path)
+#             data_dict = update_crl_infor(data_dict, cert_path)
 
-        with open(server_result_path, 'w') as f:
-            json.dump(data_dict, f)
+#         with open(server_result_path, 'w') as f:
+#             json.dump(data_dict, f)
 
-    return result
+#     return result
+
+
+def parse_result_files(folder_path):
+    rfile = os.path.join(folder_path, RESULT_JSON)
+    server_result_path = os.path.join(folder_path, SERVER_RESULT_JSON)
+    if not os.path.exists(rfile) or check_parsed(server_result_path):
+        return
+
+    data_dict = dict()
+    with open(rfile, "r") as f:
+        print("--------" + rfile + "--------------")
+        data_dict = json.load(f)
+        data_dict = init_data(data_dict)
+        cert_path = os.path.join(folder_path, CERT_CHAIN)
+        crl_path = os.path.join(folder_path, FILE_CRL)
+        data_dict = update_cert_infor(data_dict, cert_path, rfile)
+
+        data_dict[CERT_ERROR] = data_dict[DOWNLOAD_CERT] if DOWNLOAD_CERT in data_dict else None
+        data_dict[CERT_NAME] = CERT_CHAIN if not data_dict[CERT_ERROR] else None
+
+        data_dict = update_stapling_infor(data_dict, cert_path)
+        data_dict = update_ocsp_infor(data_dict, cert_path)
+        data_dict = update_crl_infor(data_dict, cert_path)
+
+    with open(server_result_path, 'w') as f:
+        json.dump(data_dict, f)
 
 
 
-def write_database():
+def write_database(out):
     print("---------Start to write to database---------------")
     folders = next(os.walk(out))[1]
     cursor = conn.cursor()
@@ -225,11 +251,20 @@ def write_database():
                 f" '{result[STAPLING_STATUS]}', '{result[STAPLING_REASON]}', '{result[STAPLING_ERROR]}', '{result[STAPLING_VERIFICATION]}', '{result[STAPLING_RESP]}', '{result[STAPLING_ERROR_MSG]}', " \
                 f" '{result[OCSP_URI]}', '{result[OCSP_VERIFY]}', '{result[OCSP_REVOKE]}', '{result[OCSP_REASON]}', '{result[OCSP_ERROR]}', '{result[OCSP_RESP]}', " \
                 f" '{result[CRL_URI]}', '{result[CRL_STATUS]}', '{result[CRL_REASON]}', '{result[CRL_ERROR]}', '{result[CRL_RESP]}', {result[CRL_SIZE]}, '{result[TIME_STAMP]}')"
-            # print(sql)
-            cursor = cursor.execute(sql)
+            try:
+                cursor = cursor.execute(sql)
+            except Exception as e:
+                print("Insert database error:", result[DOMAIN], e)
     conn.commit()
 
 
 if __name__ == "__main__":
-    parse_result_files(OUT)
-    write_database()
+    folders = next(os.walk(OUT))[1]
+    folder_paths = []
+    for folder in folders:
+        folder_paths.append(os.path.join(OUT, folder))
+    with Pool(50) as p:
+        p.map(parse_result_files, folder_paths)
+
+    # parse_result_files(OUT)
+    write_database(OUT)
