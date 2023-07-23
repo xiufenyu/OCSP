@@ -19,12 +19,13 @@ from constants import ISSUER_CERT, ISSUER_CN
 from constants import OCSP_URI
 from constants import CRL_STATUS, CRL_REASON, CRL_RESP
 
-# RESULT
+
+# RESPONSE RESULT
 from constants import SERIAL_NOT_IN_CRL
 from constants import STATUS_REVOKED
 from constants import OCSP_REVOCATION_REASON, CRL_REVOCATION_REASON, REASON
 from constants import CRL_SERIAL_NUMBER
-
+from constants import REVOCATION_TIME, THIS_UPDATE, NEXT_UPDATE
 
 from constants import EMPTY_STR, CERT_CHAIN
 
@@ -250,3 +251,31 @@ class CertificateManager:
 
         return issuer_o
         #   Issuer: C = US, O = Amazon, CN = Amazon RSA 2048 M02
+
+
+    def get_revocation_time(self, resp_list):
+        revo_time = None
+        for row in resp_list:
+            if REVOCATION_TIME in row:
+                revo_time = row.split(REVOCATION_TIME)[1]
+                break
+        return revo_time
+
+
+    def get_this_update(self, resp_list):
+        this_update = None
+        for row in resp_list:
+            # print("This Update", THIS_UPDATE, "row=", row)
+            if THIS_UPDATE in row:
+                this_update = row.split(THIS_UPDATE)[1]
+                break
+        return this_update
+
+
+    def get_next_update(self, resp_list):
+        next_update = None
+        for row in resp_list:
+            if NEXT_UPDATE in row:
+                next_update = row.split(NEXT_UPDATE)[1]
+                break
+        return next_update

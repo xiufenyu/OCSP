@@ -15,7 +15,7 @@ from constants import OCSP_RESP_STAPLING_NO_RESPONSE_SENT, OCSP_STAPLING_STATUS,
 from constants import RESPONSE_VERIFY, CA_ISSUERS
 
 # DATABASE Attributes
-from constants import DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
+from constants import RANK, DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
 from constants import ISSUER_CERT, SERIAL, ISSUER_CN
 from constants import STAPLING_ERROR, STAPLING_STATUS, STAPLING_REASON, STAPLING_VERIFICATION, UNAUTHORIZED
 from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_REASON, REASON
@@ -87,15 +87,19 @@ class OSCPServer:
         cert_mgr = self.cert_mgr
         reason = cert_mgr.get_OCSP_revocation_reason(resp_list)
         verification = cert_mgr.get_stapling_verification(resp_list)
+        revo_time = cert_mgr.get_revocation_time(resp_list)
+        this_update = cert_mgr.get_this_update(resp_list)
+        next_update = cert_mgr.get_next_update(resp_list)
         stapling_error = None
         error_list = error.split("\n")
         for err in error_list:
             if VERIFY_ERROR in err:
                 stapling_error = err.split(":")[-1].strip("\n")
 
-        return {STAPLING_STATUS: status, STAPLING_ERROR:stapling_error,
-                STAPLING_REASON: reason, STAPLING_VERIFICATION: verification,
-                STAPLING_RESP: resp, STAPLING_ERROR_MSG: error}
+        return {STAPLING_STATUS: status, STAPLING_ERROR:stapling_error, STAPLING_REASON: reason,
+                STAPLING_VERIFICATION: verification, STAPLING_RESP: resp, STAPLING_ERROR_MSG: error,
+                STAPLING_REVOCATION_TIME: revo_time, STAPLING_THIS_UPDATE: this_update, STAPLING_NEXT_UPDATE: next_update
+                }
 
 
     def ocsp_revocation(self, domain):
@@ -123,6 +127,9 @@ class OSCPServer:
         response, error = invoke_subproc(cmd_ocsp)
         stdout_resp = response.split("\n")
         reason = cert_mgr.get_OCSP_revocation_reason(stdout_resp)
+        revo_time = cert_mgr.get_revocation_time(resp_list)
+        this_update = cert_mgr.get_this_update(resp_list)
+        next_update = cert_mgr.get_next_update(resp_list)
         error_list = error.split("\n")
         verify_status = None
         revoked_status = None
@@ -140,7 +147,8 @@ class OSCPServer:
                     verify_status = line.split(RESPONSE_VERIFY)[1].strip()
                     break
 
-        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: response, OCSP_REASON: reason}
+        result = result | {OCSP_VERIFY: verify_status, OCSP_REVOKE: revoked_status, OCSP_RESP: response, OCSP_REASON: reason,
+                           OCSP_REVOCATION_TIME: revo_time, OCSP_THIS_UPDATE: this_update, OCSP_NEXT_UPDATE: next_update}
         print("OCSP verify:", verify_status, ", revoke:", revoked_status)
         return result
     
@@ -208,17 +216,18 @@ class OSCPServer:
             json.dump(result_dict, f)
 
 
-    def delete_file(self, fpath):
-        if os.path.exists(fpath):
-            os.system(f"rm -f {fpath}")
+    # def delete_file(self, fpath):
+    #     if os.path.exists(fpath):
+    #         os.system(f"rm -f {fpath}")
 
 
-def start_measure(domain):
+def start_measure(rank_domain):
+    rank, domain = rank_domain[0], rank_domain[1]
     server = OSCPServer()
     if server.check_finished(domain):
         return
     print(f"------------{domain}--------------")
-    result = {DOMAIN: domain, TIME_STAMP: time.time()}
+    result = {RANK: rank, DOMAIN: domain, TIME_STAMP: time.time()}
     result_file = os.path.join(OUT, domain, RESULT_JSON)
 
     staple_result = server.ocsp_stapling(domain)
@@ -239,9 +248,10 @@ def load_domains(fpath, add_www):
     domains_list = set()
     with open(fpath, "r") as f:
         for row in f:
+            rank = row.split(",")[0]
             domain = row.split(",")[1].strip("\n")
             domain = "www." + domain if add_www else domain
-            domains_list.add(domain)
+            domains_list.add((rank, domain))
     return domains_list
 
 
