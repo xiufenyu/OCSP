@@ -176,6 +176,8 @@ class CertificateManager:
 
 
     def get_crl_revocation_reason(self, crl_path, serial):
+        if serial is None:
+            return None
         crl_output = []
         cmd = f"openssl crl -in {crl_path} -inform DER -text -noout"
         response, error = invoke_subproc(cmd)

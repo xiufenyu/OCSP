@@ -213,10 +213,15 @@ def update_ocsp_infor(data_dict, cert_path):
 def update_crl_infor(data_dict, crl_path):
     data_dict[CRL_URI] = data_dict[CRL_URI] if CRL_URI in data_dict else None
     data_dict[CRL_STATUS] = data_dict[CRL_STATUS] if CRL_STATUS in data_dict else None
-    if data_dict[CRL_RESP] is not None:
-        cert_mgr = CertificateManager()
+    cert_mgr = CertificateManager()
+    if data_dict[CRL_RESP] is None:
         serial = data_dict[SERIAL]
-        data_dict[CRL_REASON] = cert_mgr.get_crl_revocation_reason(crl_path, serial)
+        resp_dict = cert_mgr.get_crl_revocation_reason(crl_path, serial)
+        if serial is None or resp_dict is None:
+            return data_dict
+        data_dict[CRL_RESP] = resp_dict[CRL_RESP]
+        data_dict[CRL_REASON] = resp_dict[CRL_REASON]
+        # print(data_dict[CRL_REASON])
         if type(data_dict[CRL_RESP]) == list:
             data_dict[CRL_RESP] = "\n".join(data_dict[CRL_RESP])
         data_dict[CRL_RESP] = base64.b64encode(bytes(data_dict[CRL_RESP], "utf-8")).decode("utf-8")
@@ -248,7 +253,7 @@ def parse_result_files(folder_path):
 
         data_dict = update_stapling_infor(data_dict, cert_path)
         data_dict = update_ocsp_infor(data_dict, cert_path)
-        data_dict = update_crl_infor(data_dict, cert_path)
+        data_dict = update_crl_infor(data_dict, crl_path)
 
     with open(server_result_path, 'w') as f:
         json.dump(data_dict, f)

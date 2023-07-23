@@ -17,8 +17,8 @@ from constants import RESPONSE_VERIFY, CA_ISSUERS
 # DATABASE Attributes
 from constants import RANK, DOMAIN, DOWNLOAD_CERT, DOWNLOAD_CERT_ERROR
 from constants import ISSUER_CERT, SERIAL, ISSUER_CN
-from constants import STAPLING_ERROR, STAPLING_STATUS, STAPLING_REASON, STAPLING_VERIFICATION, UNAUTHORIZED
-from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_REASON, REASON
+from constants import STAPLING_ERROR, STAPLING_STATUS, STAPLING_REASON, STAPLING_VERIFICATION, UNAUTHORIZED, STAPLING_REVOCATION_TIME, STAPLING_THIS_UPDATE, STAPLING_NEXT_UPDATE
+from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_ERROR, OCSP_REASON, REASON, OCSP_REVOCATION_TIME, OCSP_THIS_UPDATE, OCSP_NEXT_UPDATE
 from constants import CRL_URI, CRL_STATUS, CRL_REASON, CRL_ERROR, CRL_RESP, CRL_SIZE
 from constants import STAPLING_RESP, STAPLING_ERROR_MSG, VERIFY_ERROR, OCSP_RESP
 from constants import TIME_STAMP
@@ -127,9 +127,9 @@ class OSCPServer:
         response, error = invoke_subproc(cmd_ocsp)
         stdout_resp = response.split("\n")
         reason = cert_mgr.get_OCSP_revocation_reason(stdout_resp)
-        revo_time = cert_mgr.get_revocation_time(resp_list)
-        this_update = cert_mgr.get_this_update(resp_list)
-        next_update = cert_mgr.get_next_update(resp_list)
+        revo_time = cert_mgr.get_revocation_time(stdout_resp)
+        this_update = cert_mgr.get_this_update(stdout_resp)
+        next_update = cert_mgr.get_next_update(stdout_resp)
         error_list = error.split("\n")
         verify_status = None
         revoked_status = None
