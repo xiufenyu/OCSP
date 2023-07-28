@@ -14,7 +14,6 @@ cursor = conn.cursor()
 BIN = 10000
 TOTAL = 1000000
 
-# def write_csv(data: list)
 
 def count_websites():
     sql = f"SELECT COUNT(DISTINCT domain) FROM server"
@@ -226,6 +225,48 @@ def cert_expiration(fname):
             writer.writerow([index, count, "{:.1%}".format(count/TOTAL)])
 
 
+def top_20_cas():
+    top_cas = list()
+    cursor = conn.cursor()
+    sql = f"SELECT issuer_cn,  count(DISTINCT domain) FROM server where issuer_cn!='{None}' GROUP BY issuer_cn ORDER BY COUNT(DISTINCT domain) DESC"
+    cursor = cursor.execute(sql)
+    for row in cursor:
+        issuer_cn, count = row[0], row[1]
+        # print(issuer_cn, count)
+        top_cas.append(issuer_cn)
+        if len(top_cas) >=20:
+            break
+    return top_cas
+
+
+def cert_validity_by_ca(fname):
+    top20_cas = top_20_cas()
+    validity = ["0-30", "30-90", "90-180", "180-365", "365-3650", "3650-999999999"]
+    result = {}
+    cursor = conn.cursor()
+    for v in validity:
+        start, end = v.split("-")[0], v.split("-")[1]
+        start, end = int(start), int(end)
+        sql = f"SELECT COUNT(domain), issuer_cn FROM server WHERE validity>{start} AND validity<={end} GROUP BY issuer_cn"
+        cursor = cursor.execute(sql)
+        index = str(start) + "-" + str(end)
+        for row in cursor:
+            count, issuer_ca = row[0], row[1]
+            if issuer_ca not in top20_cas:
+                continue
+            if issuer_ca not in result:
+                result[issuer_ca] = dict()
+            result[issuer_ca][index] = count
+
+    with open(fname, "w") as f:
+        writer = csv.writer(f)
+        for ca in result:
+            validities = result[ca]
+            for index in validities:
+                count = result[ca][index]
+                writer.writerow([ca, index, count])
+
+
 def stapling_errors(fname):
     cursor = conn.cursor()
     sql = f"SELECT stapling_error, COUNT(domain) FROM server GROUP BY stapling_error"
@@ -288,7 +329,7 @@ if __name__ == "__main__":
     total = count_websites()
     # ocsp_stapling_websites(total)
     # ocsp_stapling_adoption_rate("stapling_adoption.csv")
-    ocsp_stapling_reasons()
+    # ocsp_stapling_reasons()
 
     print("----------------OCSP Report -------------------------")
     # ocsp_websites()
@@ -302,6 +343,7 @@ if __name__ == "__main__":
     print("-----------CA-----------")
     # group_by_CA("cert_ca.csv")
     # cert_expiration("validity.csv")
+    cert_validity_by_ca("validity_ca.csv")
 
     # stapling_errors("stapling_errors.csv")
     

@@ -17,7 +17,7 @@ from constants import OCSP_URI, OCSP_VERIFY, OCSP_REVOKE, OCSP_REASON, OCSP_ERRO
 from constants import CRL_URI, CRL_STATUS, CRL_REASON, CRL_ERROR, CRL_RESP, CRL_SIZE
 from constants import TIME_STAMP, VALIDITY, NOT_BEFORE, NOT_AFTER
 
-from constants import DOWNLOAD_CERT, CERT_CHAIN, FILE_CRL
+from constants import DOWNLOAD_CERT, CERT_CHAIN, FILE_CRL, CERT_CHAIN_LEN
 from constants import NAME_OR_SERVICE_NOT_KNOWN, NO_ADDRESS_ASSOCIATED_WITH_HOST_NAME, NO_PEER_CERTIFICATE, TEMPORAY_FAILURE_IN_NAME_RESOLUTION
 
 from constants import DEFAULT_VALIDITY_VALUE
@@ -39,7 +39,7 @@ conn = sqlite3.connect(database)
 cursor = conn.cursor()
 
 cursor.execute('''CREATE TABLE IF NOT EXISTS server( \
-                  rank integer, domain TEXT, cert_name TEXT, serial TEXT, issuer_cn TEXT, not_before TEXT, not_after TEXT, validity integer, issuer_cert TEXT, cert_error TEXT,\
+                  rank integer, domain TEXT, cert_name TEXT, serial TEXT, issuer_cn TEXT, chain_len integer, not_before TEXT, not_after TEXT, validity integer, issuer_cert TEXT, cert_error TEXT,\
                   stapling_status TEXT, stapling_reason TEXT, stapling_error TEXT, stapling_verification TEXT, stapling_resp, stapling_error_msg, \
                   stapling_revocation_time TEXT, stapling_this_update TEXT, stapling_next_update TEXT, \
                   ocsp_uri TEXT, ocsp_verify TEXT, ocsp_revoke TEXT, ocsp_reason TEXT, ocsp_error TEXT, ocsp_resp TEXT, ocsp_revocation_time TEXT, ocsp_this_update, TEXT, ocsp_next_update TEXT, \
@@ -74,6 +74,8 @@ def init_data(data_dict):
         data_dict[ISSUER_CN] = None
     if ISSUER_CERT not in data_dict:
         data_dict[ISSUER_CERT] = None
+    if CERT_CHAIN_LEN not in data_dict:
+        data_dict[CERT_CHAIN_LEN] = None
     if STAPLING_STATUS not in data_dict:
         data_dict[STAPLING_STATUS] = None
     if STAPLING_ERROR not in data_dict:
@@ -139,6 +141,9 @@ def update_cert_infor(data_dict, cert_path, rfile):
             data_dict[ISSUER_CN] = cert_mgr.extract_issuer_authority(cert_path)
         if "Let's Encrypt" == data_dict[ISSUER_CN]:
             data_dict[ISSUER_CN] = "Lets Encrypt"
+
+        if data_dict[CERT_CHAIN_LEN] is None:
+            data_dict[CERT_CHAIN_LEN] = cert_mgr.get_certchain_len(cert_path)
 
         expiry_dict = cert_mgr.extract_expiry(cert_path)
         if data_dict[NOT_BEFORE] is None:
@@ -270,15 +275,18 @@ def write_database(out):
             continue
         with open(server_result_path, "r") as f:
             result = json.load(f)
-            sql = f"INSERT INTO server ({RANK}, {DOMAIN}, {CERT_NAME}, {SERIAL}, {ISSUER_CN}, {NOT_BEFORE}, {NOT_AFTER}, {VALIDITY}, {ISSUER_CERT}, {CERT_ERROR}, " \
+            # for key in result:
+            #     print(key, result[key])
+            sql = f"INSERT INTO server ({RANK}, {DOMAIN}, {CERT_NAME}, {SERIAL}, {ISSUER_CN}, {CERT_CHAIN_LEN}, {NOT_BEFORE}, {NOT_AFTER}, {VALIDITY}, {ISSUER_CERT}, {CERT_ERROR}, " \
                 f"{STAPLING_STATUS}, {STAPLING_REASON}, {STAPLING_ERROR}, {STAPLING_VERIFICATION}, {STAPLING_RESP}, {STAPLING_ERROR_MSG}, {STAPLING_REVOCATION_TIME}, {STAPLING_THIS_UPDATE}, {STAPLING_NEXT_UPDATE}, " \
                 f"{OCSP_URI}, {OCSP_VERIFY}, {OCSP_REVOKE}, {OCSP_REASON}, {OCSP_ERROR}, {OCSP_RESP}, {OCSP_REVOCATION_TIME}, {OCSP_THIS_UPDATE}, {OCSP_NEXT_UPDATE}, " \
                 f"{CRL_URI}, {CRL_STATUS}, {CRL_REASON}, {CRL_ERROR}, {CRL_RESP}, {CRL_SIZE}, {TIME_STAMP}) " \
-                f" VALUES ({result[RANK]}, '{result[DOMAIN]}', '{result[CERT_NAME]}', '{result[SERIAL]}', '{result[ISSUER_CN]}', '{result[NOT_BEFORE]}', '{result[NOT_AFTER]}', {result[VALIDITY]}, '{result[ISSUER_CERT]}', '{result[CERT_ERROR]}', " \
+                f" VALUES ({result[RANK]}, '{result[DOMAIN]}', '{result[CERT_NAME]}', '{result[SERIAL]}', '{result[ISSUER_CN]}', {result[CERT_CHAIN_LEN]},'{result[NOT_BEFORE]}', '{result[NOT_AFTER]}', {result[VALIDITY]}, '{result[ISSUER_CERT]}', '{result[CERT_ERROR]}', " \
                 f" '{result[STAPLING_STATUS]}', '{result[STAPLING_REASON]}', '{result[STAPLING_ERROR]}', '{result[STAPLING_VERIFICATION]}', '{result[STAPLING_RESP]}', '{result[STAPLING_ERROR_MSG]}', " \
                 f" '{result[STAPLING_REVOCATION_TIME]}', '{result[STAPLING_THIS_UPDATE]}', '{result[STAPLING_NEXT_UPDATE]}'," \
                 f" '{result[OCSP_URI]}', '{result[OCSP_VERIFY]}', '{result[OCSP_REVOKE]}', '{result[OCSP_REASON]}', '{result[OCSP_ERROR]}', '{result[OCSP_RESP]}', '{result[OCSP_REVOCATION_TIME]}', '{result[OCSP_THIS_UPDATE]}', '{result[OCSP_NEXT_UPDATE]}'," \
                 f" '{result[CRL_URI]}', '{result[CRL_STATUS]}', '{result[CRL_REASON]}', '{result[CRL_ERROR]}', '{result[CRL_RESP]}', {result[CRL_SIZE]}, '{result[TIME_STAMP]}')"
+            print(sql)
             try:
                 cursor = cursor.execute(sql)
             except Exception as e:

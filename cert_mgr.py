@@ -82,6 +82,15 @@ class CertificateManager:
                 cert_content = EMPTY_STR
 
     
+    def get_certchain_len(self, cert_path):
+        cert_files = []
+        if os.path.exists(cert_path):
+            dir_out = os.path.dirname(cert_path)
+            # print("dir_out", dir_out)
+            cert_files = glob(os.path.join(dir_out, "cert_*.crt"))
+        return len(cert_files)
+
+
     def extract_issuer_cert(self, domain, cert_path):
         dir_out = os.path.join(OUT, domain)
         cmd_issuer = f"openssl x509 -in {cert_path} -noout -issuer"
@@ -250,7 +259,7 @@ class CertificateManager:
             if issuer_o.startswith('"'):
                 delimiter = '",'
             issuer_o = issuer_o.split(delimiter)[0]
-
+            issuer_o = issuer_o.strip('"').strip(".")
         return issuer_o
         #   Issuer: C = US, O = Amazon, CN = Amazon RSA 2048 M02
 
